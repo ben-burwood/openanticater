@@ -1,0 +1,21 @@
+[workspace]
+resolver = "3"
+members = ["crates/anticater-core", "crates/anticater-ui"]
+# `cargo run` launches the GUI
+default-members = ["crates/anticater-ui"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ben-burwood/openanticater"
+authors = ["Ben Burwood <ben.burwood@streetwave.co>"]
+description = "Control System for the Anticater VK-01 Knob"
+
+[workspace.dependencies]
+anticater-core = { path = "crates/anticater-core", version = "0.1.0" }
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

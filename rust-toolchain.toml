@@ -1,0 +1,4 @@
+[toolchain]
+# The workspace targets edition 2024 / rust-version 1.98; the machine default is
+# older, so pin here to keep a bare `cargo build` on a supported compiler.
+channel = "1.98.0"

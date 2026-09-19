@@ -1,0 +1,19 @@
+[package]
+name = "anticater-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "GPUI Desktop App for controlling the Anticater Knob"
+default-run = "anticater-ui"
+
+[[bin]]
+name = "anticater-ui"
+path = "src/main.rs"
+
+[dependencies]
+anticater-core = { workspace = true }
+# Stable GPUI as published to crates.io by Zed (single crate, no platform split).
+gpui = "0.2.2"
