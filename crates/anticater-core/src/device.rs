@@ -75,6 +75,11 @@ impl Device {
         self.transport.is_alive()
     }
 
+    /// Battery charge `0..=100` - BLE Transport Only
+    pub fn battery(&self) -> Option<u8> {
+        self.transport.battery()
+    }
+
     /// Polled for Connect/Disconnect Events over **USB**.
     ///
     /// Transport-agnostic presence lives on [`Device::is_present`].

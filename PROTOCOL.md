@@ -293,9 +293,12 @@ Pick the first present/writable (resp. notifiable) characteristic from each list
 
 - **Host → device:** subscribe the notify characteristic's CCCD, then write the **same 65-byte
   frame** used on USB (report id `0x03` + 64-byte body, §2) to the write characteristic using
-  **write-without-response**. Frames longer than one packet (only the 3-frame LED upload, §5.2)
-  are split into **125-byte chunks** (`CHUNK_SIZE`); a single config/commit frame is one write.
-  Requires a negotiated ATT MTU ≥ ~128, which WinRT establishes automatically on connect.
+  **write-without-response**. A write-without-response cannot be fragmented by the stack, so it
+  must fit **ATT_MTU − 3**; this device negotiates a 64-byte MTU (max 61-byte payload), and a
+  full 65-byte write fails with `E_INVALIDARG` (`0x80070057`). Split every frame into chunks of
+  **≤ 20 bytes** (the BLE-minimum ATT_MTU − 3, safe on any connection); the firmware reassembles
+  the byte stream, so a frame — or the 3-frame LED upload (§5.2) — split across writes arrives
+  intact. Do **not** assume a large MTU.
 - **Device → host:** config replies arrive as **notifications** on the notify characteristic
   (not as a GATT read). A read query is therefore write-then-await-notification: write the `0xFA`
   request frame, then read the matching reply off the notify stream — the BLE analogue of the

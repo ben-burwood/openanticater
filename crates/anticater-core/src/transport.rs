@@ -21,4 +21,9 @@ pub trait Transport: Send {
     fn is_alive(&self) -> bool;
 
     fn kind(&self) -> &'static str;
+
+    /// Battery Charge `0..=100` - BLE Transport Only
+    fn battery(&self) -> Option<u8> {
+        None
+    }
 }

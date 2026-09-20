@@ -30,8 +30,16 @@ const SERVICE_AE40: u16 = 0xAE40;
 const WRITE_CHARS: [u16; 3] = [0xAE41, 0xAE03, 0xAE01];
 /// Notify/indicate characteristics, in preference order (§8.2).
 const NOTIFY_CHARS: [u16; 4] = [0xAE42, 0xAE02, 0xAE04, 0xAE05];
+/// Standard GATT Battery Level characteristic (Battery Service `0x180F`).
+const BATTERY_LEVEL: u16 = 0x2A19;
 /// Max bytes per GATT write; longer frames are chunked (§8.3).
-const CHUNK_SIZE: usize = 125;
+/// Sized to the BLE floor: the minimum ATT_MTU is 23, so a write-without-response
+/// (which WinRT/GATT cannot fragment) is capped at MTU−3 = 20 bytes.
+/// Device negotiates a 64-byte MTU, so a full 65-byte frame in one write fails with
+/// `E_INVALIDARG` (0x80070057) — chunking at 20 fits every connection.
+/// Firmware reassembles the byte stream (the vendor's LED upload is itself split
+/// mid-frame), so a frame split across writes arrives intact.
+const CHUNK_SIZE: usize = 20;
 /// How long to scan for the advertising knob before giving up.
 const SCAN_SECS: u64 = 3;
 
@@ -40,6 +48,8 @@ pub struct BleTransport {
     rt: Runtime,
     peripheral: Peripheral,
     write_char: Characteristic,
+    /// Standard GATT Battery Level (`0x2A19`).
+    battery_char: Option<Characteristic>,
     /// Notifications forwarded off the GATT stream by a background task.
     rx: Receiver<Vec<u8>>,
 }
@@ -48,7 +58,7 @@ impl BleTransport {
     /// Scan for, connect to, and subscribe the first advertising knob.
     pub fn open() -> Result<(Self, KnobInfo)> {
         let rt = Runtime::new().map_err(|e| Error::BleSetup(format!("tokio runtime: {e}")))?;
-        let (peripheral, write_char, notify_char, info) = rt.block_on(connect())?;
+        let (peripheral, write_char, notify_char, battery_char, info) = rt.block_on(connect())?;
 
         // Subscribe, then forward every notification value into a channel that
         // the synchronous `read` drains (§8.3: replies come as notifications).
@@ -70,6 +80,7 @@ impl BleTransport {
                 rt,
                 peripheral,
                 write_char,
+                battery_char,
                 rx,
             },
             info,
@@ -123,10 +134,23 @@ impl Transport for BleTransport {
     fn kind(&self) -> &'static str {
         "BLE"
     }
+
+    fn battery(&self) -> Option<u8> {
+        let ch = self.battery_char.as_ref()?;
+        let value = self.rt.block_on(self.peripheral.read(ch)).ok()?;
+        value.first().copied()
+    }
 }
 
-/// Scan, connect, discover, and resolve the write + notify characteristics (§8.4).
-async fn connect() -> Result<(Peripheral, Characteristic, Characteristic, KnobInfo)> {
+/// Scan, connect, discover, and resolve the write + notify (+ battery) characteristics (§8.4).
+type ConnectResult = (
+    Peripheral,
+    Characteristic,
+    Characteristic,
+    Option<Characteristic>,
+    KnobInfo,
+);
+async fn connect() -> Result<ConnectResult> {
     let manager = Manager::new().await?;
     let adapter = manager
         .adapters()
@@ -178,6 +202,10 @@ async fn connect() -> Result<(Peripheral, Characteristic, Characteristic, KnobIn
         CharPropFlags::NOTIFY | CharPropFlags::INDICATE,
     )
     .ok_or_else(|| Error::BleSetup("no notify AE42/AE02/AE04/AE05 characteristic".into()))?;
+    let battery_char = chars
+        .iter()
+        .find(|c| c.uuid == uuid_from_u16(BATTERY_LEVEL))
+        .cloned();
 
     let info = KnobInfo {
         vendor_id: 0,
@@ -186,7 +214,7 @@ async fn connect() -> Result<(Peripheral, Characteristic, Characteristic, KnobIn
         product: name,
         serial: Some(peripheral.address().to_string()),
     };
-    Ok((peripheral, write_char, notify_char, info))
+    Ok((peripheral, write_char, notify_char, battery_char, info))
 }
 
 /// First characteristic from `prefs` (by 16-bit alias) that carries `want` props.
