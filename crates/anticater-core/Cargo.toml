@@ -9,8 +9,12 @@ authors.workspace = true
 description = "Device read/write and vendor HID Protocol for the Anticater Knob"
 
 [dependencies]
-# Cross-platform USB HID
-# Compiles a small C shim on Windows via the MSVC toolchain.
-hidapi = "2"
 # Official HID Usage Tables
 hut = "0.5"
+# Cross-platform USB HID
+## Compiles a small C shim on Windows via the MSVC toolchain.
+hidapi = "2"
+# Cross-platform GATT (WinRT / CoreBluetooth / BlueZ)
+btleplug = "0.11"
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+futures = "0.3"

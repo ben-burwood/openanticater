@@ -228,3 +228,70 @@ The full name↔code tables and lookup are in `library/anticater/keycodes.py`.
 > Note: the standard HID *modifier bitmap* (ctrl `0x01`, shift `0x02`, …) appears only in the
 > emulated-keyboard **input** reports on `MI_01` (decoded by `anticater monitor`); it is **not**
 > used in the config protocol, which uses the `0xF1`–`0xF4` pseudo-keys above.
+
+---
+
+## 8. Bluetooth LE transport
+
+The wireless variant of the knob (advertised name `ANTICATER_MINI`) speaks the **same command
+language** as USB — identical `0x03` report id, identical `0xFA`/`0xFB`/`0xFD`/`0xFE` opcodes, and
+the identical 64-byte entry body of §4–§5. Only the **pipe** differs: there is no `0xFF00` vendor
+HID collection over the air, so config rides a pair of custom GATT services instead of a HID
+report to `MI_00`. Everything in §3–§7 applies unchanged to the frame *contents*.
+
+This section was verified against live hardware and cross-checked against the vendor app's own
+BLE bridge (`ble_helper.exe`, a `bleak`/WinRT GATT client the Qt GUI drives over stdio JSON).
+
+### 8.1 Why not HID-over-GATT
+
+Over BLE the knob enumerates as a standard **HID-over-GATT** device (service `0x1812`) exposing
+only the emulated **keyboard / mouse / consumer** collections. Windows denies user-mode writes to
+all of them (the same anti-keylogger lockout that blocks `MI_01` on USB — §README), and crucially
+**no `0xFF00` vendor collection is exposed**. The config channel therefore lives entirely in the
+two vendor GATT services below.
+
+### 8.2 Vendor GATT services
+
+| service | role |
+|---------|------|
+| `0000AE40-0000-1000-8000-00805F9B34FB` | primary config tunnel |
+| `0000AE30-0000-1000-8000-00805F9B34FB` | alternate config tunnel + status register |
+
+Characteristics (16-bit aliases shown; full UUID = `0000AExx-0000-1000-8000-00805F9B34FB`):
+
+| char | service | properties | role |
+|------|---------|-----------|------|
+| `AE41` | AE40 | write-without-response | **preferred write** (host → device frames) |
+| `AE42` | AE40 | notify | **preferred notify** (device → host responses) |
+| `AE01` / `AE03` | AE30 | write-without-response | fallback write |
+| `AE02` / `AE04` | AE30 | notify | fallback notify |
+| `AE05` | AE30 | indicate | fallback notify |
+| `AE10` | AE30 | read / write | volatile status register (not part of the config flow) |
+
+**Write preference order:** `AE41`, then `AE03`, then `AE01`.
+**Notify preference order:** `AE42`, then `AE02`, `AE04`, `AE05`.
+Pick the first present/writable (resp. notifiable) characteristic from each list.
+
+### 8.3 Transfer
+
+- **Host → device:** subscribe the notify characteristic's CCCD, then write the **same 65-byte
+  frame** used on USB (report id `0x03` + 64-byte body, §2) to the write characteristic using
+  **write-without-response**. Frames longer than one packet (only the 3-frame LED upload, §5.2)
+  are split into **125-byte chunks** (`CHUNK_SIZE`); a single config/commit frame is one write.
+  Requires a negotiated ATT MTU ≥ ~128, which WinRT establishes automatically on connect.
+- **Device → host:** config replies arrive as **notifications** on the notify characteristic
+  (not as a GATT read). A read query is therefore write-then-await-notification: write the `0xFA`
+  request frame, then read the matching reply off the notify stream — the BLE analogue of the
+  USB "drain until the reply matches" rule (§2).
+- **Response marker:** a config-response frame begins **`0x03 0xFD`** (with a leading-`0x03`
+  unwrap guard for an occasional doubled `03 03 FD` prefix). This distinguishes config replies
+  from any live HID input the device may also emit.
+
+### 8.4 Selecting the device
+
+Match on the advertised name containing `ANTICATER`, or on the peripheral advertising service
+`AE40`. On Windows, prefer resolving the already system-connected device: WinRT often owns the
+link and `BluetoothLEDevice.FromBluetoothAddressAsync` can fail while it does — enumerate the
+connected devices and open by device id instead. (BleakClient's Windows GattSession also
+intermittently returns only the standard services, which is why a direct WinRT/GATT path is used
+there rather than going through Bleak.)

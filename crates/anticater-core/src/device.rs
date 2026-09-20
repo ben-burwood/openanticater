@@ -1,14 +1,15 @@
-//! HID Transport: find, open, and talk to the Knob's config Interface.
+//! The [`Device`]: the knob's config API over any [`Transport`].
 //!
-//! Configuration goes over interface `MI_00` -
-//! vendor channel `usage_page == 0xFF00` (`PROTOCOL.md` §1).
-
-use hidapi::{DeviceInfo, HidApi, HidDevice};
+//! Read/write/commit and LED control are transport-agnostic — they build the
+//! frames of `PROTOCOL.md` §3–§5 and hand them to a [`Transport`] (USB HID §1–§2, or Bluetooth LE §8).
+//! The "drain until the reply matches" rule (§2) lives here and works identically on both pipes.
 
 use crate::action::Action;
 use crate::error::{Error, Result};
+use crate::hid::HidTransport;
 use crate::led::{self, LedMode, Palette};
-use crate::protocol::{self, Command, Control, DeviceId, offset};
+use crate::protocol::{self, Command, Control, offset};
+use crate::transport::Transport;
 
 const READ_TIMEOUT_MS: i32 = 200;
 /// Frames to Drain whilst looking for Response (§2).
@@ -24,38 +25,61 @@ pub struct KnobInfo {
 }
 
 pub struct Device {
-    handle: HidDevice,
+    transport: Box<dyn Transport>,
     info: KnobInfo,
 }
 
 impl Device {
-    /// Open the FIRST connected Knob found on the config Interface.
+    /// Open the first connected Knob over **USB** (HID config interface).
     pub fn open() -> Result<Self> {
-        let api = HidApi::new()?;
-        let info = api
-            .device_list()
-            .find(|d| is_config_interface(d))
-            .ok_or(Error::DeviceNotFound)?;
-        let knob = KnobInfo {
-            vendor_id: info.vendor_id(),
-            product_id: info.product_id(),
-            manufacturer: info.manufacturer_string().map(str::to_owned),
-            product: info.product_string().map(str::to_owned),
-            serial: info.serial_number().map(str::to_owned),
-        };
-        let handle = api.open_path(info.path())?;
-        Ok(Self { handle, info: knob })
+        let (transport, info) = HidTransport::open()?;
+        Ok(Self {
+            transport: Box::new(transport),
+            info,
+        })
+    }
+
+    /// Open the first connected Knob over **Bluetooth LE** (§8).
+    pub fn open_ble() -> Result<Self> {
+        let (transport, info) = crate::ble::BleTransport::open()?;
+        Ok(Self {
+            transport: Box::new(transport),
+            info,
+        })
+    }
+
+    /// Open the Knob on whatever Transport is available: USB first, then Bluetooth LE.
+    pub fn open_any() -> Result<Self> {
+        match Self::open() {
+            Ok(dev) => Ok(dev),
+            Err(Error::DeviceNotFound) => Self::open_ble(),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Build a device over a caller-supplied Transport (e.g. a mock, or a
+    /// pre-connected peripheral). `info` describes the underlying device.
+    pub fn with_transport(transport: Box<dyn Transport>, info: KnobInfo) -> Self {
+        Self { transport, info }
     }
 
     pub fn info(&self) -> &KnobInfo {
         &self.info
     }
 
-    /// Polled for Connect/Disconnect Events
+    pub fn transport_kind(&self) -> &'static str {
+        self.transport.kind()
+    }
+
+    pub fn is_present(&self) -> bool {
+        self.transport.is_alive()
+    }
+
+    /// Polled for Connect/Disconnect Events over **USB**.
+    ///
+    /// Transport-agnostic presence lives on [`Device::is_present`].
     pub fn is_connected() -> bool {
-        HidApi::new()
-            .map(|api| api.device_list().any(is_config_interface))
-            .unwrap_or(false)
+        crate::hid::hid_present()
     }
 
     // ----- Read API ---------------------------------------------------------
@@ -71,12 +95,12 @@ impl Device {
         req[offset::CONTROL] = control as u8;
         req[3] = 0x00;
         req[4] = page;
-        self.handle.write(&req)?;
+        self.transport.write(&req)?;
 
         // Drain until the reply's (command, control, page) matches the request
         let mut buf = [0u8; protocol::OUTPUT_REPORT_LEN];
         for _ in 0..DRAIN_READS {
-            let n = self.handle.read_timeout(&mut buf, READ_TIMEOUT_MS)?;
+            let n = self.transport.read(&mut buf, READ_TIMEOUT_MS)?;
             if n == 0 {
                 continue; // timed out; try again within the drain budget
             }
@@ -111,7 +135,7 @@ impl Device {
     /// Stage a mapping for `control` on `page`.
     /// Not persisted until [`commit`](Device::commit).
     pub fn write_action(&self, control: Control, page: u8, action: &Action) -> Result<()> {
-        self.handle.write(&action.encode(control, page))?;
+        self.transport.write(&action.encode(control, page))?;
         Ok(())
     }
 
@@ -120,7 +144,7 @@ impl Device {
         let mut frame = [0u8; protocol::OUTPUT_REPORT_LEN];
         frame[0] = protocol::REPORT_ID;
         frame[1..1 + protocol::COMMIT_PAYLOAD.len()].copy_from_slice(&protocol::COMMIT_PAYLOAD);
-        self.handle.write(&frame)?;
+        self.transport.write(&frame)?;
         Ok(())
     }
 
@@ -139,11 +163,11 @@ impl Device {
         req[1] = Command::ReadLed as u8;
         req[2] = Command::ReadLed as u8;
         req[3] = Command::ReadLed as u8;
-        self.handle.write(&req)?;
+        self.transport.write(&req)?;
 
         let mut buf = [0u8; protocol::OUTPUT_REPORT_LEN];
         for _ in 0..DRAIN_READS {
-            let n = self.handle.read_timeout(&mut buf, READ_TIMEOUT_MS)?;
+            let n = self.transport.read(&mut buf, READ_TIMEOUT_MS)?;
             if n == 0 {
                 continue;
             }
@@ -162,7 +186,7 @@ impl Device {
     /// Not persisted until [`commit`](Device::commit).
     pub fn write_led(&self, mode: LedMode, palette: &Palette) -> Result<()> {
         for frame in led::upload_frames(mode, palette) {
-            self.handle.write(&frame)?;
+            self.transport.write(&frame)?;
         }
         Ok(())
     }
@@ -171,16 +195,4 @@ impl Device {
         self.write_led(mode, palette)?;
         self.commit()
     }
-}
-
-/// Is this the Knob's Vendor config Interface (right VID/PID and usage page)?
-fn is_config_interface(info: &DeviceInfo) -> bool {
-    info.usage_page() == protocol::CONFIG_USAGE_PAGE && is_knob(info.vendor_id(), info.product_id())
-}
-
-/// VID/PID belongs to Anticater Firmware Family (§1)?
-pub(crate) fn is_knob(vendor_id: u16, product_id: u16) -> bool {
-    let vendor_ok =
-        vendor_id == DeviceId::DEFAULT.vendor_id || vendor_id == DeviceId::VENDOR_ID_ALT;
-    vendor_ok && DeviceId::FAMILY_PRODUCT_IDS.contains(&product_id)
 }
