@@ -101,7 +101,11 @@ impl core::fmt::Display for Modifier {
 }
 
 /// Control slots, entry byte 2 (§6).
-/// Unit may only physically exposes some of them.
+///
+/// Firmware Family numbers slots 1..=6.
+/// On the **button** variant, T1/T5 are the two buttons.
+/// On the **knob-only** variant (e.g. `ANTICATER_MINI`), T1 is unused and T5/T6 are the
+/// **hold-and-turn** gestures — turning while the knob is pressed, distinct from a plain turn (T2/T4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Control {
@@ -113,17 +117,23 @@ pub enum Control {
     T3 = 3,
     /// Knob Clockwise
     T4 = 4,
-    /// Button
+    /// Hold + CCW
     T5 = 5,
+    /// Hold + CW
+    T6 = 6,
 }
 
 impl Control {
-    /// Knob turned counter-clockwise — alias for [`Control::T2`].
+    /// Knob Counter-Clockwise — alias for [`Control::T2`].
     pub const TURN_CCW: Self = Self::T2;
-    /// Knob pressed in — alias for [`Control::T3`].
+    /// Knob Press — alias for [`Control::T3`].
     pub const PRESS: Self = Self::T3;
-    /// Knob turned clockwise — alias for [`Control::T4`].
+    /// Knob Clockwise — alias for [`Control::T4`].
     pub const TURN_CW: Self = Self::T4;
+    /// Knob Hold and Counter-Clockwise — alias for [`Control::T5`] (§6).
+    pub const HOLD_TURN_CCW: Self = Self::T5;
+    /// Knob Hold and Clockwise — alias for [`Control::T6`] (§6).
+    pub const HOLD_TURN_CW: Self = Self::T6;
 }
 
 /// Config slot, entry byte 3 (§6).

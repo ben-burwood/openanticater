@@ -181,10 +181,25 @@ dark-red, orange, pale-yellow, chartreuse, teal, navy, magenta, pink, gold.
 
 ## 6. Config model
 
-- **type 1..5** — the five control slots: `T1`/`T5` = buttons, `T2` = knob turn CCW,
-  `T4` = knob turn CW, `T3` = knob press. The config always exposes all five; a given unit
-  only physically has some of them (the plain clickable-knob variant has **only T2/T3/T4** —
-  no buttons, so config written to T1/T5 has nothing to trigger it).
+- **type 1..6** — the control slots (entry byte 2). The firmware family numbers slots `1..6`;
+  which are physically reachable depends on the variant:
+  - **Button variant:** `T1`/`T5` = buttons, `T2` = turn CCW, `T4` = turn CW, `T3` = press.
+  - **Knob-only variant** (e.g. `ANTICATER_MINI`): no buttons. `T1` is unused, and `T5`/`T6`
+    become the **hold-and-turn** gestures — turning while the knob is pressed in, a separate
+    slot from a plain turn:
+
+    | type | gesture | factory default |
+    |---|---|---|
+    | `2` | turn CCW (left) | Volume Down |
+    | `4` | turn CW (right) | Volume Up |
+    | `3` | press | Play/Pause (or Mute) |
+    | `5` | **hold + turn CCW (left)** | Prev Track / Brightness − |
+    | `6` | **hold + turn CW (right)** | Next Track / Brightness + |
+
+  A hold-and-turn entry is byte-identical to a plain turn entry (§4) — only the `type` byte
+  differs (`5`/`6` instead of `2`/`4`). Direction pairs with the plain turns: `{2,5}` are the
+  decrement/left family, `{4,6}` the increment/right family. (Verified against the vendor app's
+  own frames, e.g. `03 FD 06 01 02 00 01 00 00 B5` = hold+turn-CW → Next Track.)
 - **page 1..3** — three config slots per control (not macro steps; a macro lives entirely
   within one page — see §4.1). **On this unit only page 1 is functional**: pressing/turning a
   control always fires its page-1 action (single/double/long press all use page 1), and the
@@ -192,15 +207,17 @@ dark-red, orange, pale-yellow, chartreuse, teal, navy, magenta, pink, gold.
   device has no layer-switch mechanism to activate them — so remap **L1** for anything that
   should take effect.
 
-Factory default mapping:
+Factory default mapping (knob-only variant):
 
 | control | page 1 | page 2 | page 3 |
 |---------|--------|--------|--------|
-| T1 (button) | Enter | a | a |
 | T2 (turn CCW) | Volume Down | Volume Down | Volume Down |
 | T3 (press) | Mute | Play/Pause | Play/Pause |
 | T4 (turn CW) | Volume Up | Volume Up | Volume Up |
-| T5 (button) | Brightness Down | Prev Track | Prev Track |
+| T5 (hold + turn CCW) | Brightness Down | Prev Track | Prev Track |
+| T6 (hold + turn CW) | Brightness Up | Next Track | Next Track |
+
+On the button variant, T1 (button) defaults to Enter and T5 is the second button.
 
 ---
 
