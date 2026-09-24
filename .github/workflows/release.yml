@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows Build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build release binary
+        run: cargo build --release --package anticater-ui
+
+      - name: Stage release asset
+        shell: pwsh
+        run: |
+          $version = "${{ github.event.release.tag_name }}"
+          $asset = "anticater-ui-$version-windows-x86_64.exe"
+          Copy-Item "target/release/anticater-ui.exe" $asset
+          "ASSET=$asset" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ env.ASSET }}
