@@ -13,7 +13,23 @@ default-run = "anticater-ui"
 name = "anticater-ui"
 path = "src/main.rs"
 
+# Prototype: proves a headless-wgpu render can animate inside a GPUI `img()`
+# element (the bridge for the in-GUI 3D knob). Run with:
+#   cargo run --bin knob3d-proto
+[[bin]]
+name = "knob3d-proto"
+path = "src/bin/knob3d_proto.rs"
+
 [dependencies]
 anticater-core = { workspace = true }
+# Shared headless knob renderer (geometry + wgpu pipelines + CPU readback).
+anticater-render = { workspace = true }
 # Stable GPUI as published to crates.io by Zed (single crate, no platform split).
 gpui = "0.2.2"
+# 3D bridge: headless wgpu render → CPU readback → GPUI image. `image` is pinned
+# to the same 0.25 line GPUI uses so we share its `Frame` type for `RenderImage`.
+wgpu = "24"
+bytemuck = { version = "1", features = ["derive"] }
+glam = "0.29"
+image = "0.25"
+pollster = "0.4"

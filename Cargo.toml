@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/anticater-core", "crates/anticater-ui"]
+members = [
+    "crates/anticater-core",
+    "crates/anticater-render",
+    "crates/anticater-ui",
+    "crates/anticater-viewer",
+]
 # `cargo run` launches the GUI
 default-members = ["crates/anticater-ui"]
 
@@ -15,6 +20,7 @@ description = "Control System for the Anticater VK-01 Knob"
 
 [workspace.dependencies]
 anticater-core = { path = "crates/anticater-core", version = "0.1.0" }
+anticater-render = { path = "crates/anticater-render", version = "0.1.0" }
 
 [profile.release]
 lto = "thin"

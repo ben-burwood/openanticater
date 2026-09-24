@@ -1,0 +1,21 @@
+[package]
+name = "anticater-viewer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "egui + wgpu 3D viewer for the Anticater VK-01 knob"
+
+[[bin]]
+name = "anticater-viewer"
+path = "src/main.rs"
+
+[dependencies]
+# Shared, windowing-agnostic knob renderer (geometry + wgpu pipelines).
+anticater-render = { workspace = true }
+# eframe drives the window + wgpu surface; re-exports egui, egui_wgpu and wgpu
+# so we stay on a single, matching set of versions (wgpu 24 == the lib's wgpu).
+eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts"] }
+glam = "0.29"
