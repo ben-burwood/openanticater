@@ -17,3 +17,4 @@ path = "src/main.rs"
 anticater-core = { workspace = true }
 # Stable GPUI as published to crates.io by Zed (single crate, no platform split).
 gpui = "0.2.2"
+
