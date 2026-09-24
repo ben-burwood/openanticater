@@ -1,0 +1,26 @@
+[package]
+name = "anticater-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Headless wgpu renderer for the Anticater VK-01 knob (shared by the viewer and the control GUI)"
+
+[lib]
+name = "anticater_render"
+path = "src/lib.rs"
+
+[dependencies]
+# Pure wgpu — no windowing/egui. Consumers inject their own device/queue so the
+# same scene code serves eframe's GPU-shared path and the GUI's CPU readback.
+# Pinned to 24 to unify with eframe 0.31's re-exported wgpu in the viewer.
+wgpu = "24"
+bytemuck = { version = "1", features = ["derive"] }
+glam = "0.29"
+
+[dev-dependencies]
+# For the `dump` example only: a headless render sanity check to PNG.
+image = "0.25"
+pollster = "0.4"

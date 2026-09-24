@@ -147,4 +147,15 @@ module vk01() {
     color(col_knob) translate([0, 0, knob_z]) knurled_knob();
 }
 
-vk01();
+// -------- Render selector ----------------------------------------------------
+// `part` defaults to "all", so opening this file in OpenSCAD shows the whole
+// assembly as before. The viewer's build step overrides it (e.g.
+// `openscad -D part="knob"`) to export each part as its own positioned mesh,
+// which keeps the base / light seam / knob as separate, individually animatable
+// meshes in the app.
+part = "all";
+
+if      (part == "all")  vk01();
+else if (part == "base") base();
+else if (part == "seam") translate([0, 0, led_z])  light_ring();
+else if (part == "knob") translate([0, 0, knob_z]) knurled_knob();
